@@ -17,6 +17,7 @@
 - Prefer small, reviewable changes over broad rewrites.
 - No repo-wide search/replace scripts.
 - If a function, method, or section has a comment, update the comment when behavior changes.
+- This is a new project so no need to add code for compatability when changing features.
 
 ## Runtime
 
