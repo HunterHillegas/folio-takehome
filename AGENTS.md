@@ -35,6 +35,8 @@
 ## Database
 
 - Schema changes go through migration files added to the repo.
+- When a feature changes the database shape, create the matching timestamped migration in `migrations/` as part of that feature; do not leave migration creation as a separate follow-up.
+- Migrations use explicit `up`/`down` callbacks only. Keep them small, ordered, and runnable through `php migrate.php up` and `php migrate.php down`.
 - Keep the fresh-clone `docker compose up` flow working.
 - Log auditable business events to `audit_log` when those flows change.
 

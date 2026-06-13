@@ -1,6 +1,7 @@
 <?php
 
 require __DIR__ . '/lib/bootstrap.php';
+require __DIR__ . '/lib/migrations.php';
 
 $dbPath = __DIR__ . '/db.sqlite';
 if (file_exists($dbPath)) {
@@ -9,6 +10,7 @@ if (file_exists($dbPath)) {
 
 $pdo = db();
 $pdo->exec(file_get_contents(__DIR__ . '/schema.sql'));
+run_pending_migrations($pdo);
 
 $pdo->exec("
     INSERT INTO staff (email, name) VALUES
