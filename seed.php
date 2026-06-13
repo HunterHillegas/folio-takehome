@@ -18,12 +18,15 @@ $pdo->exec("
 ");
 
 $stmt = $pdo->prepare('
-    INSERT INTO documents (title, body, created_by)
-    VALUES (?, ?, 1)
+    INSERT INTO documents (title, body, created_by, readable_id, slug_id)
+    VALUES (?, ?, 1, ?, ?)
 ');
+$ids = document_ids_for_title('Welcome Packet');
 $stmt->execute([
     'Welcome Packet',
     "Welcome to Folio!\n\nThis is the body of your welcome packet.",
+    $ids['readable_id'],
+    $ids['slug_id'],
 ]);
 $docId = (int) $pdo->lastInsertId();
 

@@ -13,14 +13,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($title === '' || $body === '') {
         $error = 'Title and body are required.';
     } else {
+        $ids = document_ids_for_title($title);
         $stmt = db()->prepare('
-            INSERT INTO documents (title, body, created_by)
-            VALUES (?, ?, ?)
+            INSERT INTO documents (title, body, created_by, readable_id, slug_id)
+            VALUES (?, ?, ?, ?, ?)
         ');
-        $stmt->execute([$title, $body, $staff['id']]);
+        $stmt->execute([$title, $body, $staff['id'], $ids['readable_id'], $ids['slug_id']]);
         $docId = (int) db()->lastInsertId();
 
-        audit_log('create', 'document', $docId, ['title' => $title]);
+        audit_log('create', 'document', $docId, [
+            'title' => $title,
+            'readable_id' => $ids['readable_id'],
+            'slug_id' => $ids['slug_id'],
+        ]);
 
         header('Location: /admin.php?created=' . $docId);
         exit;
@@ -41,7 +46,7 @@ render_header('Admin', $staff);
 <p class="page-subtitle">Create documents and generate share links for recipients.</p>
 
 <?php if (!empty($_GET['created'])): ?>
-    <div class="banner banner-success">Document #<?= (int) $_GET['created'] ?> created.</div>
+    <div class="banner banner-success">Document created.</div>
 <?php endif ?>
 
 <?php if ($error): ?>
@@ -71,7 +76,7 @@ render_header('Admin', $staff);
         <table class="data">
             <thead>
                 <tr>
-                    <th>ID</th>
+                    <th>Document ID</th>
                     <th>Title</th>
                     <th>Creator</th>
                     <th>Created</th>
@@ -81,7 +86,7 @@ render_header('Admin', $staff);
             <tbody>
                 <?php foreach ($docs as $d): ?>
                     <tr>
-                        <td class="id">#<?= (int) $d['id'] ?></td>
+                        <td class="id"><?= h($d['readable_id']) ?></td>
                         <td><?= h($d['title']) ?></td>
                         <td><?= h($d['creator_name']) ?></td>
                         <td><?= h($d['created_at']) ?></td>

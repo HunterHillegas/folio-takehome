@@ -59,6 +59,13 @@ Today documents are identified by auto-increment integers (`#1`, `#2`) and share
 
 The exact format, length, and URL structure are your call. Think about collisions, guessability, and how this interacts with the existing share-token mechanism.
 
+Implemented approach: Folio generates two human-shareable IDs for each document:
+
+- **Secure readable ID**: a title slug plus a non-semantic code, paired with the existing private share token in recipient links. This is the recommended option because the readable ID helps humans identify the document while the token still controls access.
+- **Simple slug ID**: a title-only slug that can open the document without a token. This is easier to say, type, or paste into an email, but it is easier to guess and can reveal document meaning.
+
+The share panel offers both because staff should have agency over the access tradeoff. Not every document has the same security requirement: an internal lunch menu and an HR packet should not force the same sharing model.
+
 ### 3. Share by name
 
 Staff should be able to find a document to share by searching for it by title, not just by scrolling a list. Decide what "search" means here — exact match, prefix, fuzzy, something else — and justify your choice.
