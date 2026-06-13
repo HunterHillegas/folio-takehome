@@ -20,6 +20,17 @@ To run the tests:
 docker compose exec app php tests/test.php
 ```
 
+Migrations are Rails-style timestamped PHP files in `migrations/`. Each file returns
+explicit `up` and `down` callbacks. `docker compose up` rebuilds `db.sqlite`, loads
+`schema.sql`, then runs pending migrations automatically through `seed.php`.
+
+Manual migration commands:
+
+```
+docker compose exec app php migrate.php up
+docker compose exec app php migrate.php down
+```
+
 You edit files on your host machine in your normal editor — the container has them mounted, so changes show up immediately on browser refresh.
 
 ## Background
