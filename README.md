@@ -35,7 +35,7 @@ You edit files on your host machine in your normal editor — the container has 
 
 ## Background
 
-Folio is a small tool that lets staff create documents and share them with recipients via one-time links. This repo contains a staff admin page, document creation, share-link generation, and a recipient view. The schema (`schema.sql`) and helpers (`lib/bootstrap.php`) are meant to feel representative of a real internal tool.
+Folio is a small tool that lets staff create documents and share them with recipients via one-time links. This repo contains a staff admin page, document creation with immediate or scheduled availability, share-link generation, and a recipient view that withholds scheduled documents until their publish time. The schema (`schema.sql`) and helpers (`lib/bootstrap.php`) are meant to feel representative of a real internal tool.
 
 Take some time to read the code before you start building.
 

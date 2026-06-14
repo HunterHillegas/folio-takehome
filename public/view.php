@@ -20,6 +20,23 @@ if (!$doc) {
     exit;
 }
 
+if (!document_is_available($doc)) {
+    http_response_code(403);
+    render_header('Not yet available');
+    ?>
+    <div class="centered-message">
+        <h1>Not yet available</h1>
+        <?php if (document_status($doc) === 'Scheduled'): ?>
+            <p>This document is scheduled to become available on <?= h(format_document_publish_at($doc)) ?>.</p>
+        <?php else: ?>
+            <p>This document is not yet available.</p>
+        <?php endif ?>
+    </div>
+    <?php
+    render_footer();
+    exit;
+}
+
 render_header($doc['title']);
 ?>
 

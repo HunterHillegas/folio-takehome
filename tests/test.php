@@ -29,6 +29,17 @@ function assert_true($cond, string $msg = ''): void {
     }
 }
 
+function assert_throws(callable $fn, string $expectedMessage): void {
+    try {
+        $fn();
+    } catch (Throwable $e) {
+        assert_true($e->getMessage() === $expectedMessage, 'unexpected exception: ' . $e->getMessage());
+        return;
+    }
+
+    throw new RuntimeException('expected exception: ' . $expectedMessage);
+}
+
 function scalar_query(string $sql, array $params = []) {
     $stmt = db()->prepare($sql);
     $stmt->execute($params);
@@ -56,23 +67,31 @@ test('seeded share link resolves to the seeded document', function () {
 });
 
 test('seed applies pending migrations', function () {
-    $shareIndexVersion = scalar_query(
-        'SELECT version FROM schema_migrations WHERE version = ?',
-        ['20260613000000']
+    $appliedVersions = array_map(
+        'strval',
+        db()->query('SELECT version FROM schema_migrations ORDER BY version')->fetchAll(PDO::FETCH_COLUMN)
     );
-    $documentIdVersion = scalar_query(
-        'SELECT version FROM schema_migrations WHERE version = ?',
-        ['20260613001000']
-    );
-    $shareTypeVersion = scalar_query(
-        'SELECT version FROM schema_migrations WHERE version = ?',
-        ['20260614001000']
-    );
+    $versions = [
+        ['20260613000000', 'share index migration'],
+        ['20260613001000', 'document ID migration'],
+        ['20260614000000', 'schedule migration'],
+        ['20260614001000', 'share type migration'],
+    ];
 
-    assert_true($shareIndexVersion === '20260613000000', 'expected share index migration to be recorded');
-    assert_true($documentIdVersion === '20260613001000', 'expected document ID migration to be recorded');
-    assert_true($shareTypeVersion === '20260614001000', 'expected share type migration to be recorded');
+    foreach ($versions as [$version, $label]) {
+        assert_true(
+            in_array($version, $appliedVersions, true),
+            'expected ' . $label . ' to be recorded'
+        );
+    }
+
     assert_true(index_exists('idx_shares_document_id'), 'expected share document index');
+    assert_true(index_exists('idx_documents_readable_id'), 'expected readable ID index');
+    assert_true(index_exists('idx_documents_slug_id'), 'expected slug ID index');
+    assert_true(column_exists('documents', 'readable_id'), 'expected readable_id column');
+    assert_true(column_exists('documents', 'slug_id'), 'expected slug_id column');
+    assert_true(column_exists('documents', 'publish_at'), 'expected publish_at column');
+    assert_true(column_exists('documents', 'publish_timezone'), 'expected publish_timezone column');
     assert_true(column_exists('shares', 'share_type'), 'expected share_type column');
 });
 
@@ -149,15 +168,86 @@ test('share URLs show secure and simple choices', function () {
     );
 });
 
-test('migration CLI rolls down and back up', function () {
-    run_command('php ' . escapeshellarg(__DIR__ . '/../migrate.php') . ' down > /dev/null');
+test('scheduled availability parses to UTC and status badges use publish_at', function () {
+    $availability = parse_document_availability([
+        'availability' => 'scheduled',
+        'publish_date' => '2026-07-04',
+        'publish_time' => '09:30',
+        'publish_timezone' => 'America/New_York',
+    ], new DateTimeImmutable('2026-07-01 12:00:00', new DateTimeZone('UTC')));
+
+    assert_true($availability['publish_at'] === '2026-07-04 13:30:00', 'expected UTC publish_at');
+    assert_true($availability['publish_timezone'] === 'America/New_York', 'expected selected timezone');
+    assert_true(document_status(['publish_at' => null]) === 'Draft', 'expected missing publish_at to be draft');
+    assert_true(
+        document_status(
+            ['publish_at' => '2026-07-04 13:30:00'],
+            new DateTimeImmutable('2026-07-04 13:00:00', new DateTimeZone('UTC'))
+        ) === 'Scheduled',
+        'expected future publish_at to be scheduled'
+    );
+    assert_true(
+        document_status(
+            ['publish_at' => '2026-07-04 13:30:00'],
+            new DateTimeImmutable('2026-07-04 13:30:00', new DateTimeZone('UTC'))
+        ) === 'Available',
+        'expected current publish_at to be available'
+    );
+});
+
+test('scheduled availability rejects nonexistent local times', function () {
+    assert_throws(function () {
+        parse_document_availability([
+            'availability' => 'scheduled',
+            'publish_date' => '2027-03-14',
+            'publish_time' => '02:30',
+            'publish_timezone' => 'America/New_York',
+        ], new DateTimeImmutable('2027-03-01 12:00:00', new DateTimeZone('UTC')));
+    }, 'Enter a valid schedule date and time.');
+});
+
+test('share view hides scheduled documents before publish time', function () {
+    $ids = document_ids_for_title('Future Packet');
+    $stmt = db()->prepare('
+        INSERT INTO documents (title, body, created_by, readable_id, slug_id, publish_at, publish_timezone)
+        VALUES (?, ?, 1, ?, ?, ?, ?)
+    ');
+    $stmt->execute([
+        'Future Packet',
+        'Future-only body',
+        $ids['readable_id'],
+        $ids['slug_id'],
+        '2099-01-01 15:00:00',
+        'America/Chicago',
+    ]);
+    $docId = (int) db()->lastInsertId();
+    $token = random_token();
+
+    $stmt = db()->prepare('
+        INSERT INTO shares (document_id, token, recipient_email, share_type)
+        VALUES (?, ?, ?, ?)
+    ');
+    $stmt->execute([$docId, $token, 'later@example.com', 'secure']);
+
+    $output = render_view_for_token($token);
+    assert_true(
+        str_contains($output, 'This document is scheduled to become available on'),
+        'expected scheduled availability message'
+    );
+    assert_true(!str_contains($output, 'Future-only body'), 'expected body to be hidden before publish_at');
+});
+
+test('migration CLI rolls recent migrations down and back up', function () {
+    run_command('php ' . escapeshellarg(__DIR__ . '/../migrate.php') . ' down 2 > /dev/null');
     assert_true(!column_exists('shares', 'share_type'), 'expected share_type column to be removed');
+    assert_true(!column_exists('documents', 'publish_at'), 'expected publish_at column to be removed');
     assert_true(index_exists('idx_documents_readable_id'), 'expected readable ID index to remain');
     assert_true(index_exists('idx_documents_slug_id'), 'expected slug ID index to remain');
     assert_true(index_exists('idx_shares_document_id'), 'expected share document index to remain');
 
     run_command('php ' . escapeshellarg(__DIR__ . '/../migrate.php') . ' up > /dev/null');
     assert_true(column_exists('shares', 'share_type'), 'expected share_type column to be restored');
+    assert_true(column_exists('documents', 'publish_at'), 'expected publish_at column to be restored');
     assert_true(index_exists('idx_documents_readable_id'), 'expected readable ID index to be restored');
     assert_true(index_exists('idx_documents_slug_id'), 'expected slug ID index to be restored');
     assert_true(index_exists('idx_shares_document_id'), 'expected share document index to be restored');
@@ -180,6 +270,14 @@ function column_exists(string $table, string $column): bool {
     }
 
     return false;
+}
+
+function render_view_for_token(string $token): string {
+    $code = '$_GET["token"] = ' . var_export($token, true) . ';'
+        . '$_SERVER["HTTP_HOST"] = "localhost:8000";'
+        . 'require ' . var_export(__DIR__ . '/../public/view.php', true) . ';';
+
+    return shell_exec('php -r ' . escapeshellarg($code)) ?: '';
 }
 
 echo "\n{$pass} passed, {$fail} failed.\n";
