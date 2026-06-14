@@ -64,10 +64,16 @@ test('seed applies pending migrations', function () {
         'SELECT version FROM schema_migrations WHERE version = ?',
         ['20260613001000']
     );
+    $shareTypeVersion = scalar_query(
+        'SELECT version FROM schema_migrations WHERE version = ?',
+        ['20260614001000']
+    );
 
     assert_true($shareIndexVersion === '20260613000000', 'expected share index migration to be recorded');
     assert_true($documentIdVersion === '20260613001000', 'expected document ID migration to be recorded');
+    assert_true($shareTypeVersion === '20260614001000', 'expected share type migration to be recorded');
     assert_true(index_exists('idx_shares_document_id'), 'expected share document index');
+    assert_true(column_exists('shares', 'share_type'), 'expected share_type column');
 });
 
 test('documents get readable secure and simple IDs', function () {
@@ -102,10 +108,23 @@ test('secure document links require the readable ID and token', function () {
     assert_true($legacy !== null, 'expected legacy token-only link to resolve');
 });
 
-test('simple slug links resolve without a token', function () {
+test('simple slug links require a simple share', function () {
+    assert_true(
+        shared_document_for_request('welcome-packet', '') === null,
+        'expected secure-only document to reject slug-only access'
+    );
+
+    $stmt = db()->prepare('
+        INSERT INTO shares (document_id, token, recipient_email, share_type)
+        SELECT id, ?, ?, ?
+        FROM documents
+        WHERE slug_id = ?
+    ');
+    $stmt->execute([random_token(), 'simple@example.com', 'simple', 'welcome-packet']);
+
     $doc = shared_document_for_request('welcome-packet', '');
 
-    assert_true($doc !== null, 'expected simple slug link to resolve');
+    assert_true($doc !== null, 'expected slug link with a simple share to resolve');
     assert_true($doc['title'] === 'Welcome Packet', 'unexpected title: ' . var_export($doc['title'], true));
 });
 
@@ -131,12 +150,14 @@ test('share URLs show secure and simple choices', function () {
 });
 
 test('migration CLI rolls down and back up', function () {
-    run_command('php ' . escapeshellarg(__DIR__ . '/../migrate.php') . ' down 2 > /dev/null');
-    assert_true(!index_exists('idx_documents_readable_id'), 'expected readable ID index to be removed');
-    assert_true(!index_exists('idx_documents_slug_id'), 'expected slug ID index to be removed');
-    assert_true(!index_exists('idx_shares_document_id'), 'expected share document index to be removed');
+    run_command('php ' . escapeshellarg(__DIR__ . '/../migrate.php') . ' down > /dev/null');
+    assert_true(!column_exists('shares', 'share_type'), 'expected share_type column to be removed');
+    assert_true(index_exists('idx_documents_readable_id'), 'expected readable ID index to remain');
+    assert_true(index_exists('idx_documents_slug_id'), 'expected slug ID index to remain');
+    assert_true(index_exists('idx_shares_document_id'), 'expected share document index to remain');
 
     run_command('php ' . escapeshellarg(__DIR__ . '/../migrate.php') . ' up > /dev/null');
+    assert_true(column_exists('shares', 'share_type'), 'expected share_type column to be restored');
     assert_true(index_exists('idx_documents_readable_id'), 'expected readable ID index to be restored');
     assert_true(index_exists('idx_documents_slug_id'), 'expected slug ID index to be restored');
     assert_true(index_exists('idx_shares_document_id'), 'expected share document index to be restored');
@@ -147,6 +168,18 @@ function index_exists(string $name): bool {
         "SELECT name FROM sqlite_master WHERE type = 'index' AND name = ?",
         [$name]
     ) === $name;
+}
+
+function column_exists(string $table, string $column): bool {
+    $stmt = db()->query('PRAGMA table_info(' . $table . ')');
+
+    foreach ($stmt->fetchAll() as $row) {
+        if ($row['name'] === $column) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 echo "\n{$pass} passed, {$fail} failed.\n";

@@ -153,8 +153,14 @@ function shared_document_for_request(string $documentId, string $token): ?array 
         SELECT d.*, NULL AS recipient_email
         FROM documents d
         WHERE d.slug_id = ?
+            AND EXISTS (
+                SELECT 1
+                FROM shares s
+                WHERE s.document_id = d.id
+                    AND s.share_type = ?
+            )
     ');
-    $stmt->execute([$documentId]);
+    $stmt->execute([$documentId, 'simple']);
     $doc = $stmt->fetch();
 
     return $doc ?: null;

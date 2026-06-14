@@ -35,10 +35,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         $token = random_token();
         $stmt = db()->prepare('
-            INSERT INTO shares (document_id, token, recipient_email)
-            VALUES (?, ?, ?)
+            INSERT INTO shares (document_id, token, recipient_email, share_type)
+            VALUES (?, ?, ?, ?)
         ');
-        $stmt->execute([$doc['id'], $token, $email]);
+        $stmt->execute([$doc['id'], $token, $email, $shareType]);
         $shareId = (int) db()->lastInsertId();
         audit_log('create', 'share', $shareId, [
             'document_id' => $doc['id'],
