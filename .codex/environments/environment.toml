@@ -1,0 +1,33 @@
+version = 1
+name = "Folio Take-Home"
+
+[setup]
+script = "docker compose build"
+
+[cleanup]
+script = "docker compose down --remove-orphans"
+
+[[actions]]
+name = "Run app"
+icon = "run"
+command = "docker compose up --build"
+
+[[actions]]
+name = "Test"
+icon = "test"
+command = "docker compose run --rm --build app php tests/test.php"
+
+[[actions]]
+name = "Seed DB"
+icon = "tool"
+command = "docker compose run --rm --build app php seed.php"
+
+[[actions]]
+name = "Migrate up"
+icon = "tool"
+command = "docker compose exec app php migrate.php up"
+
+[[actions]]
+name = "Migrate down"
+icon = "tool"
+command = "docker compose exec app php migrate.php down"
