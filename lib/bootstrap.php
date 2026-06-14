@@ -84,7 +84,11 @@ function parse_document_availability(array $input, ?DateTimeImmutable $now = nul
         new DateTimeZone($timezone)
     );
     $errors = DateTimeImmutable::getLastErrors();
-    if (!$localTime || ($errors !== false && ($errors['warning_count'] > 0 || $errors['error_count'] > 0))) {
+    if (
+        !$localTime
+        || ($errors !== false && ($errors['warning_count'] > 0 || $errors['error_count'] > 0))
+        || $localTime->format('Y-m-d H:i') !== "{$date} {$time}"
+    ) {
         throw new InvalidArgumentException('Enter a valid schedule date and time.');
     }
 
