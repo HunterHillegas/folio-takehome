@@ -17,13 +17,14 @@ $pdo->exec("
         ('freddy@folio.example', 'Freddy Folio')
 ");
 
-$stmt = $pdo->prepare('
-    INSERT INTO documents (title, body, created_by)
-    VALUES (?, ?, 1)
-');
+$stmt = $pdo->prepare("
+    INSERT INTO documents (title, body, created_by, publish_at, publish_timezone)
+    VALUES (?, ?, 1, datetime('now'), ?)
+");
 $stmt->execute([
     'Welcome Packet',
     "Welcome to Folio!\n\nThis is the body of your welcome packet.",
+    DEFAULT_PUBLISH_TIMEZONE,
 ]);
 $docId = (int) $pdo->lastInsertId();
 
