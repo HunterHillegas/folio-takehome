@@ -29,6 +29,17 @@ function assert_true($cond, string $msg = ''): void {
     }
 }
 
+function assert_throws(callable $fn, string $expectedMessage): void {
+    try {
+        $fn();
+    } catch (Throwable $e) {
+        assert_true($e->getMessage() === $expectedMessage, 'unexpected exception: ' . $e->getMessage());
+        return;
+    }
+
+    throw new RuntimeException('expected exception: ' . $expectedMessage);
+}
+
 function scalar_query(string $sql, array $params = []) {
     $stmt = db()->prepare($sql);
     $stmt->execute($params);
@@ -97,6 +108,17 @@ test('scheduled availability parses to UTC and status badges use publish_at', fu
         ) === 'Available',
         'expected current publish_at to be available'
     );
+});
+
+test('scheduled availability rejects nonexistent local times', function () {
+    assert_throws(function () {
+        parse_document_availability([
+            'availability' => 'scheduled',
+            'publish_date' => '2027-03-14',
+            'publish_time' => '02:30',
+            'publish_timezone' => 'America/New_York',
+        ], new DateTimeImmutable('2027-03-01 12:00:00', new DateTimeZone('UTC')));
+    }, 'Enter a valid schedule date and time.');
 });
 
 test('share view hides scheduled documents before publish time', function () {
