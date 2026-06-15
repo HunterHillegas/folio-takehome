@@ -35,7 +35,7 @@ You edit files on your host machine in your normal editor — the container has 
 
 ## Background
 
-Folio is a small tool that lets staff create documents and share them with recipients via one-time links. This repo contains a staff admin page, document creation, share-link generation, and a recipient view. The schema (`schema.sql`) and helpers (`lib/bootstrap.php`) are meant to feel representative of a real internal tool.
+Folio is a small tool that lets staff create documents and share them with recipients via one-time links. This repo contains a staff admin page, document creation with immediate or scheduled availability, share-link generation, and a recipient view that withholds scheduled documents until their publish time. The schema (`schema.sql`) and helpers (`lib/bootstrap.php`) are meant to feel representative of a real internal tool.
 
 Take some time to read the code before you start building.
 
@@ -58,6 +58,13 @@ Staff should be able to prepare a document in advance and have it become visible
 Today documents are identified by auto-increment integers (`#1`, `#2`) and share links use opaque hex tokens. Customers want each document to have a **short, readable ID** — something a person could say out loud, type into a URL, or paste into an email. Examples of the shape (not prescriptive): `welcome-2026`, `onboarding-packet-3k`, `FOLIO-7QX4`.
 
 The exact format, length, and URL structure are your call. Think about collisions, guessability, and how this interacts with the existing share-token mechanism.
+
+Implemented approach: Folio generates two human-shareable IDs for each document:
+
+- **Secure readable ID**: a title slug plus a non-semantic code, paired with the existing private share token in recipient links. This is the recommended option because the readable ID helps humans identify the document while the token still controls access.
+- **Simple slug ID**: a title-only slug that can open the document without a token. This is easier to say, type, or paste into an email, but it is easier to guess and can reveal document meaning.
+
+The share panel offers both because staff should have agency over the access tradeoff. Not every document has the same security requirement: an internal lunch menu and an HR packet should not force the same sharing model.
 
 ### 3. Share by name
 
