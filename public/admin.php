@@ -37,14 +37,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if ($error === null) {
+        $ids = document_ids_for_title($title);
         $stmt = db()->prepare('
-            INSERT INTO documents (title, body, created_by, publish_at, publish_timezone)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO documents (title, body, created_by, readable_id, slug_id, publish_at, publish_timezone)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
         ');
         $stmt->execute([
             $title,
             $body,
             $staff['id'],
+            $ids['readable_id'],
+            $ids['slug_id'],
             $availability['publish_at'],
             $availability['publish_timezone'],
         ]);
@@ -52,6 +55,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         audit_log('create', 'document', $docId, [
             'title' => $title,
+            'readable_id' => $ids['readable_id'],
+            'slug_id' => $ids['slug_id'],
             'publish_at' => $availability['publish_at'],
             'publish_timezone' => $availability['publish_timezone'],
         ]);
@@ -75,7 +80,7 @@ render_header('Admin', $staff);
 <p class="page-subtitle">Create documents and generate share links for recipients.</p>
 
 <?php if (!empty($_GET['created'])): ?>
-    <div class="banner banner-success">Document #<?= (int) $_GET['created'] ?> created.</div>
+    <div class="banner banner-success">Document created.</div>
 <?php endif ?>
 
 <?php if ($error): ?>
@@ -150,7 +155,7 @@ render_header('Admin', $staff);
         <table class="data">
             <thead>
                 <tr>
-                    <th>ID</th>
+                    <th>Document ID</th>
                     <th>Title</th>
                     <th>Status</th>
                     <th>Creator</th>
@@ -161,7 +166,7 @@ render_header('Admin', $staff);
             <tbody>
                 <?php foreach ($docs as $d): ?>
                     <tr>
-                        <td class="id">#<?= (int) $d['id'] ?></td>
+                        <td class="id"><?= h($d['readable_id']) ?></td>
                         <td><?= h($d['title']) ?></td>
                         <?php $status = document_status($d); ?>
                         <td><span class="badge badge-<?= h(strtolower($status)) ?>"><?= h($status) ?></span></td>
