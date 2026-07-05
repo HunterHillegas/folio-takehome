@@ -342,13 +342,22 @@ render_header('Admin', $staff, ['/assets/admin.css']);
 
     function showToast(message, link) {
         if (!toast) return;
-        toast.innerHTML = link ? `${message} <code>${link}</code>` : message;
+        toast.textContent = '';
+        toast.append(document.createTextNode(message));
+
+        if (link) {
+            const code = document.createElement('code');
+            code.textContent = link;
+            toast.append(code);
+        }
+
         toast.hidden = false;
         window.setTimeout(() => { toast.hidden = true; }, 5000);
     }
 
     async function copyShare(row, button) {
         const title = row.dataset.title;
+        let createdUrl = '';
         button.disabled = true;
         button.textContent = 'Copying...';
 
@@ -362,11 +371,12 @@ render_header('Admin', $staff, ['/assets/admin.css']);
             });
             const payload = await response.json();
             if (!response.ok) throw new Error(payload.error || 'Could not create link.');
+            createdUrl = payload.url;
 
-            await navigator.clipboard.writeText(payload.url);
+            await navigator.clipboard.writeText(createdUrl);
             showToast(`Copied "${title}" link.`);
         } catch (error) {
-            showToast('Link ready. Copy manually:', error.message.startsWith('http') ? error.message : '');
+            showToast('Link ready. Copy manually:', createdUrl);
             console.error(error);
         } finally {
             button.disabled = false;

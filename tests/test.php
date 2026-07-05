@@ -243,6 +243,15 @@ test('admin document list includes live filter and copy-link hooks', function ()
     assert_true(str_contains($output, 'data-copy-share'), 'expected copy-link row buttons');
 });
 
+test('admin copy toast renders text and preserves clipboard-failure links', function () {
+    $output = render_admin_page();
+
+    assert_true(!str_contains($output, 'toast.innerHTML'), 'expected toast to avoid HTML parsing');
+    assert_true(str_contains($output, 'toast.textContent'), 'expected toast text rendering');
+    assert_true(str_contains($output, 'createdUrl'), 'expected copy flow to retain generated URL');
+    assert_true(str_contains($output, 'showToast(\'Link ready. Copy manually:\', createdUrl)'), 'expected fallback to show generated URL');
+});
+
 test('quick copied shares create labeled links and audit the action', function () {
     $doc = db()->query('SELECT * FROM documents WHERE title = \'Welcome Packet\'')->fetch();
     $share = create_document_share($doc, DIRECT_SHARE_RECIPIENT, 'labeled');
