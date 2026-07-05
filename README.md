@@ -35,7 +35,7 @@ You edit files on your host machine in your normal editor — the container has 
 
 ## Background
 
-Folio is a small tool that lets staff create documents and share them with recipients via one-time links. This repo contains a staff admin page, document creation with immediate or scheduled availability, share-link generation, and a recipient view that withholds scheduled documents until their publish time. The schema (`schema.sql`) and helpers (`lib/bootstrap.php`) are meant to feel representative of a real internal tool.
+Folio is a small tool that lets staff create documents and share them with recipients via one-time links. This repo contains a staff admin page, document creation with optional scheduled availability, share-link generation, live title filtering for quick sharing, and a recipient view that withholds scheduled documents until their publish time. The schema (`schema.sql`) and helpers (`lib/bootstrap.php`) are meant to feel representative of a real internal tool.
 
 Take some time to read the code before you start building.
 
@@ -59,16 +59,18 @@ Today documents are identified by auto-increment integers (`#1`, `#2`) and share
 
 The exact format, length, and URL structure are your call. Think about collisions, guessability, and how this interacts with the existing share-token mechanism.
 
-Implemented approach: Folio generates two human-shareable IDs for each document:
+Implemented approach: Folio generates a decorative title slug for each document and keeps the private token as the authority:
 
-- **Secure readable ID**: a title slug plus a non-semantic code, paired with the existing private share token in recipient links. This is the recommended option because the readable ID helps humans identify the document while the token still controls access.
-- **Simple slug ID**: a title-only slug that can open the document without a token. This is easier to say, type, or paste into an email, but it is easier to guess and can reveal document meaning.
+- **Labeled link**: `/d/{slug}/{token}`. The slug helps humans recognize the document, but routing resolves by token so stale or misspelled slugs do not break access.
+- **Discreet link**: `/s/{token}`. This keeps sensitive titles out of URLs while preserving the same token-based access control.
 
-The share panel offers both because staff should have agency over the access tradeoff. Not every document has the same security requirement: an internal lunch menu and an HR packet should not force the same sharing model.
+The share panel offers both because staff should have agency over whether the title belongs in the URL. Slug-only links intentionally do not resolve documents.
 
 ### 3. Share by name
 
 Staff should be able to find a document to share by searching for it by title, not just by scrolling a list. Decide what "search" means here — exact match, prefix, fuzzy, something else — and justify your choice.
+
+Implemented approach: the admin list has a live filter for order-independent word prefixes, keeps the original recency order, and adds a row-level Copy link action. Copying creates an audited labeled share link and writes it to the clipboard.
 
 ## What we're intentionally not specifying
 

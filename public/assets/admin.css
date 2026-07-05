@@ -1,0 +1,82 @@
+.field-help {
+    color: var(--text-muted);
+    font-size: 0.84rem;
+    margin: 0.35rem 0 0;
+}
+
+.preset-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin: -0.35rem 0 1rem;
+}
+
+.btn-quiet {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2rem;
+    padding: 0.3rem 0.65rem;
+    font: inherit;
+    font-size: 0.84rem;
+    font-weight: 600;
+    color: var(--accent);
+    background: var(--accent-soft);
+    border: 1px solid #99f6e4;
+    border-radius: var(--radius);
+    cursor: pointer;
+}
+
+.btn-quiet:hover {
+    color: var(--accent-hover);
+    border-color: #5eead4;
+}
+
+.table-filter {
+    margin-bottom: 1rem;
+}
+
+table.data tr.is-active td {
+    background: var(--accent-soft);
+}
+
+.inline-form {
+    display: inline;
+    margin-left: 0.45rem;
+}
+
+.row-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.65rem;
+    white-space: nowrap;
+}
+
+.toast {
+    position: fixed;
+    right: 1.25rem;
+    bottom: 1.25rem;
+    max-width: min(28rem, calc(100vw - 2.5rem));
+    padding: 0.8rem 0.95rem;
+    color: var(--success-text);
+    background: var(--success-bg);
+    border: 1px solid var(--success-border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    font-size: 0.9rem;
+}
+
+.toast code {
+    display: block;
+    margin-top: 0.35rem;
+    word-break: break-all;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+@media (max-width: 560px) {
+    .row-actions {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 0.35rem;
+    }
+}

@@ -3,6 +3,7 @@
 date_default_timezone_set('America/Chicago');
 
 const DEFAULT_PUBLISH_TIMEZONE = 'America/Chicago';
+const DIRECT_SHARE_RECIPIENT = 'quick-share@folio.local';
 
 function db(): PDO {
     static $pdo = null;
@@ -96,23 +97,44 @@ function document_ids_for_title(string $title): array {
 
     return [
         'readable_id' => next_unique_document_id('readable_id', $base, readable_code()),
-        'slug_id' => next_unique_document_id('slug_id', $base),
+        'slug_id' => $base,
     ];
 }
 
 function document_share_url(array $doc, string $shareType, string $token, string $baseUrl): string {
     $baseUrl = rtrim($baseUrl, '/');
 
-    if ($shareType === 'simple') {
-        return $baseUrl . '/view.php?' . http_build_query(['id' => $doc['slug_id']], '', '&', PHP_QUERY_RFC3986);
+    if ($shareType === 'discreet') {
+        return $baseUrl . '/s/' . rawurlencode($token);
     }
 
-    return $baseUrl . '/view.php?' . http_build_query(
-        ['id' => $doc['readable_id'], 'token' => $token],
-        '',
-        '&',
-        PHP_QUERY_RFC3986
-    );
+    return $baseUrl . '/d/' . rawurlencode($doc['slug_id']) . '/' . rawurlencode($token);
+}
+
+function create_document_share(array $doc, string $recipientEmail, string $shareType): array {
+    if (!in_array($shareType, ['labeled', 'discreet'], true)) {
+        throw new InvalidArgumentException('Choose a link type.');
+    }
+
+    $token = random_token();
+    $stmt = db()->prepare('
+        INSERT INTO shares (document_id, token, recipient_email, share_type)
+        VALUES (?, ?, ?, ?)
+    ');
+    $stmt->execute([$doc['id'], $token, $recipientEmail, $shareType]);
+    $shareId = (int) db()->lastInsertId();
+
+    audit_log('create', 'share', $shareId, [
+        'document_id' => $doc['id'],
+        'recipient_email' => $recipientEmail,
+        'share_type' => $shareType,
+    ]);
+
+    return [
+        'id' => $shareId,
+        'token' => $token,
+        'url' => document_share_url($doc, $shareType, $token, request_base_url()),
+    ];
 }
 
 function request_base_url(): string {
@@ -140,32 +162,10 @@ function shared_document_for_request(string $documentId, string $token): ?array 
             return null;
         }
 
-        if ($documentId !== '' && !in_array($documentId, [$doc['readable_id'], $doc['slug_id']], true)) {
-            return null;
-        }
-
         return $doc;
     }
 
-    if ($documentId === '') {
-        return null;
-    }
-
-    $stmt = db()->prepare('
-        SELECT d.*, NULL AS recipient_email
-        FROM documents d
-        WHERE d.slug_id = ?
-            AND EXISTS (
-                SELECT 1
-                FROM shares s
-                WHERE s.document_id = d.id
-                    AND s.share_type = ?
-            )
-    ');
-    $stmt->execute([$documentId, 'simple']);
-    $doc = $stmt->fetch();
-
-    return $doc ?: null;
+    return null;
 }
 
 function available_timezones(): array {
@@ -179,50 +179,55 @@ function available_timezones(): array {
 }
 
 function parse_document_availability(array $input, ?DateTimeImmutable $now = null): array {
-    $mode = $input['availability'] ?? 'immediate';
     $now ??= new DateTimeImmutable('now', new DateTimeZone('UTC'));
+    $timezone = normalize_publish_timezone($input['publish_timezone'] ?? DEFAULT_PUBLISH_TIMEZONE);
+    $visibleFrom = trim($input['visible_from'] ?? '');
 
-    if ($mode === 'immediate') {
+    if ($visibleFrom === '' && isset($input['publish_date'], $input['publish_time'])) {
+        $date = trim($input['publish_date'] ?? '');
+        $time = trim($input['publish_time'] ?? '');
+        $visibleFrom = $date !== '' || $time !== '' ? "{$date}T{$time}" : '';
+    }
+
+    if ($visibleFrom === '') {
         return [
             'publish_at' => format_sql_datetime($now),
-            'publish_timezone' => normalize_publish_timezone($input['publish_timezone'] ?? DEFAULT_PUBLISH_TIMEZONE),
+            'publish_timezone' => $timezone,
+            'notice' => null,
         ];
     }
 
-    if ($mode !== 'scheduled') {
-        throw new InvalidArgumentException('Choose an availability option.');
-    }
-
-    $date = trim($input['publish_date'] ?? '');
-    $time = trim($input['publish_time'] ?? '');
-    $timezone = normalize_publish_timezone($input['publish_timezone'] ?? '');
-
-    if ($date === '' || $time === '') {
-        throw new InvalidArgumentException('Date and time are required when scheduling for later.');
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/', $visibleFrom)) {
+        throw new InvalidArgumentException('Enter a valid schedule date and time.');
     }
 
     $localTime = DateTimeImmutable::createFromFormat(
-        '!Y-m-d H:i',
-        "{$date} {$time}",
+        '!Y-m-d\TH:i',
+        $visibleFrom,
         new DateTimeZone($timezone)
     );
     $errors = DateTimeImmutable::getLastErrors();
     if (
         !$localTime
         || ($errors !== false && ($errors['warning_count'] > 0 || $errors['error_count'] > 0))
-        || $localTime->format('Y-m-d H:i') !== "{$date} {$time}"
+        || $localTime->format('Y-m-d\TH:i') !== $visibleFrom
     ) {
         throw new InvalidArgumentException('Enter a valid schedule date and time.');
     }
 
     $publishAt = $localTime->setTimezone(new DateTimeZone('UTC'));
     if ($publishAt <= $now) {
-        throw new InvalidArgumentException('Scheduled availability must be in the future.');
+        return [
+            'publish_at' => format_sql_datetime($now),
+            'publish_timezone' => $timezone,
+            'notice' => 'Past visible-from times publish immediately.',
+        ];
     }
 
     return [
         'publish_at' => format_sql_datetime($publishAt),
         'publish_timezone' => $timezone,
+        'notice' => null,
     ];
 }
 
@@ -245,6 +250,20 @@ function format_document_publish_at(array $document): string {
     return document_publish_datetime($document)
         ->setTimezone(new DateTimeZone($timezone))
         ->format('F j, Y \a\t g:i A T');
+}
+
+function format_document_visible_at(array $document): string {
+    $timezone = $document['publish_timezone'] ?: DEFAULT_PUBLISH_TIMEZONE;
+
+    return document_publish_datetime($document)
+        ->setTimezone(new DateTimeZone($timezone))
+        ->format('M j, g:i A T');
+}
+
+function document_publish_iso8601(array $document): string {
+    return document_publish_datetime($document)
+        ->setTimezone(new DateTimeZone('UTC'))
+        ->format(DateTimeInterface::ATOM);
 }
 
 function format_sql_datetime(DateTimeImmutable $datetime): string {

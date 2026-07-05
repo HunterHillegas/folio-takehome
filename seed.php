@@ -36,8 +36,8 @@ $stmt = $pdo->prepare('
     INSERT INTO shares (document_id, token, recipient_email, share_type)
     VALUES (?, ?, ?, ?)
 ');
-$stmt->execute([$docId, $token, 'recipient@example.com', 'secure']);
+$stmt->execute([$docId, $token, 'recipient@example.com', 'labeled']);
 
 echo "Seeded db.sqlite.\n";
 echo "Admin:        http://localhost:8000/admin.php\n";
-echo "Sample share: http://localhost:8000/view.php?token={$token}\n";
+echo "Sample share: http://localhost:8000/d/{$ids['slug_id']}/{$token}\n";

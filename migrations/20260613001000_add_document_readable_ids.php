@@ -19,7 +19,7 @@ return [
         }
 
         $pdo->exec('CREATE UNIQUE INDEX idx_documents_readable_id ON documents(readable_id)');
-        $pdo->exec('CREATE UNIQUE INDEX idx_documents_slug_id ON documents(slug_id)');
+        $pdo->exec('CREATE INDEX idx_documents_slug_id ON documents(slug_id)');
     },
     'down' => function (PDO $pdo): void {
         $pdo->exec('DROP INDEX IF EXISTS idx_documents_readable_id');

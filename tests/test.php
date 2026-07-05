@@ -95,7 +95,7 @@ test('seed applies pending migrations', function () {
     assert_true(column_exists('shares', 'share_type'), 'expected share_type column');
 });
 
-test('documents get readable secure and simple IDs', function () {
+test('documents get decorative slugs and internal readable IDs', function () {
     $stmt = db()->query('SELECT readable_id, slug_id FROM documents WHERE title = \'Welcome Packet\'');
     $doc = $stmt->fetch();
 
@@ -107,47 +107,35 @@ test('documents get readable secure and simple IDs', function () {
     );
 });
 
-test('secure document links require the readable ID and token', function () {
+test('labeled document links resolve by token and tolerate stale slugs', function () {
     $stmt = db()->query('
-        SELECT d.readable_id, s.token
+        SELECT d.slug_id, s.token
         FROM shares s
         JOIN documents d ON d.id = s.document_id
         LIMIT 1
     ');
     $share = $stmt->fetch();
 
-    $doc = shared_document_for_request($share['readable_id'], $share['token']);
-    assert_true($doc !== null, 'expected secure readable link to resolve');
+    $doc = shared_document_for_request($share['slug_id'], $share['token']);
+    assert_true($doc !== null, 'expected labeled link to resolve');
     assert_true($doc['title'] === 'Welcome Packet', 'unexpected title: ' . var_export($doc['title'], true));
 
-    $mismatch = shared_document_for_request('wrong-document', $share['token']);
-    assert_true($mismatch === null, 'expected mismatched readable ID and token to fail');
+    $stale = shared_document_for_request('stale-or-misspelled', $share['token']);
+    assert_true($stale !== null, 'expected stale slug to still resolve by token');
+    assert_true($stale['title'] === 'Welcome Packet', 'unexpected stale-slug title');
 
-    $legacy = shared_document_for_request('', $share['token']);
-    assert_true($legacy !== null, 'expected legacy token-only link to resolve');
+    $bare = shared_document_for_request('', $share['token']);
+    assert_true($bare !== null, 'expected discreet token-only link to resolve');
 });
 
-test('simple slug links require a simple share', function () {
+test('slug-only links never resolve documents', function () {
     assert_true(
         shared_document_for_request('welcome-packet', '') === null,
-        'expected secure-only document to reject slug-only access'
+        'expected slug-only access to fail'
     );
-
-    $stmt = db()->prepare('
-        INSERT INTO shares (document_id, token, recipient_email, share_type)
-        SELECT id, ?, ?, ?
-        FROM documents
-        WHERE slug_id = ?
-    ');
-    $stmt->execute([random_token(), 'simple@example.com', 'simple', 'welcome-packet']);
-
-    $doc = shared_document_for_request('welcome-packet', '');
-
-    assert_true($doc !== null, 'expected slug link with a simple share to resolve');
-    assert_true($doc['title'] === 'Welcome Packet', 'unexpected title: ' . var_export($doc['title'], true));
 });
 
-test('share URLs show secure and simple choices', function () {
+test('share URLs show labeled and discreet choices', function () {
     $stmt = db()->query('
         SELECT d.*, s.token
         FROM shares s
@@ -157,22 +145,20 @@ test('share URLs show secure and simple choices', function () {
     $doc = $stmt->fetch();
 
     assert_true(
-        document_share_url($doc, 'secure', $doc['token'], 'http://localhost:8000') ===
-            'http://localhost:8000/view.php?id=' . $doc['readable_id'] . '&token=' . $doc['token'],
-        'expected secure URL with readable ID and token'
+        document_share_url($doc, 'labeled', $doc['token'], 'http://localhost:8000') ===
+            'http://localhost:8000/d/welcome-packet/' . $doc['token'],
+        'expected labeled URL with decorative slug and token'
     );
     assert_true(
-        document_share_url($doc, 'simple', $doc['token'], 'http://localhost:8000') ===
-            'http://localhost:8000/view.php?id=welcome-packet',
-        'expected simple URL with slug only'
+        document_share_url($doc, 'discreet', $doc['token'], 'http://localhost:8000') ===
+            'http://localhost:8000/s/' . $doc['token'],
+        'expected discreet URL with token only'
     );
 });
 
 test('scheduled availability parses to UTC and status badges use publish_at', function () {
     $availability = parse_document_availability([
-        'availability' => 'scheduled',
-        'publish_date' => '2026-07-04',
-        'publish_time' => '09:30',
+        'visible_from' => '2026-07-04T09:30',
         'publish_timezone' => 'America/New_York',
     ], new DateTimeImmutable('2026-07-01 12:00:00', new DateTimeZone('UTC')));
 
@@ -195,12 +181,21 @@ test('scheduled availability parses to UTC and status badges use publish_at', fu
     );
 });
 
+test('past visible-from dates publish immediately with a notice', function () {
+    $now = new DateTimeImmutable('2026-07-05 12:00:00', new DateTimeZone('UTC'));
+    $availability = parse_document_availability([
+        'visible_from' => '2026-07-04T09:30',
+        'publish_timezone' => 'America/New_York',
+    ], $now);
+
+    assert_true($availability['publish_at'] === '2026-07-05 12:00:00', 'expected immediate publish_at');
+    assert_true($availability['notice'] !== null, 'expected friendly visible-now notice');
+});
+
 test('scheduled availability rejects nonexistent local times', function () {
     assert_throws(function () {
         parse_document_availability([
-            'availability' => 'scheduled',
-            'publish_date' => '2027-03-14',
-            'publish_time' => '02:30',
+            'visible_from' => '2027-03-14T02:30',
             'publish_timezone' => 'America/New_York',
         ], new DateTimeImmutable('2027-03-01 12:00:00', new DateTimeZone('UTC')));
     }, 'Enter a valid schedule date and time.');
@@ -234,7 +229,30 @@ test('share view hides scheduled documents before publish time', function () {
         str_contains($output, 'This document is scheduled to become available on'),
         'expected scheduled availability message'
     );
+    assert_true(str_contains($output, 'Future Packet'), 'expected scheduled page to show title');
+    assert_true(str_contains($output, 'data-local-publish-at='), 'expected local-time hook');
+    assert_true(str_contains($output, 'setTimeout'), 'expected auto-refresh timer');
     assert_true(!str_contains($output, 'Future-only body'), 'expected body to be hidden before publish_at');
+});
+
+test('admin document list includes live filter and copy-link hooks', function () {
+    $output = render_admin_page();
+
+    assert_true(str_contains($output, 'id="documents_filter"'), 'expected document filter input');
+    assert_true(str_contains($output, 'data-search='), 'expected searchable row metadata');
+    assert_true(str_contains($output, 'data-copy-share'), 'expected copy-link row buttons');
+});
+
+test('quick copied shares create labeled links and audit the action', function () {
+    $doc = db()->query('SELECT * FROM documents WHERE title = \'Welcome Packet\'')->fetch();
+    $share = create_document_share($doc, DIRECT_SHARE_RECIPIENT, 'labeled');
+
+    assert_true(str_starts_with($share['url'], 'http://localhost:8000/d/welcome-packet/'), 'expected labeled share URL');
+    assert_true(shared_document_for_request('welcome-packet', $share['token']) !== null, 'expected copied link to resolve');
+    assert_true(
+        scalar_query('SELECT action FROM audit_log WHERE entity_type = ? ORDER BY id DESC LIMIT 1', ['share']) === 'create',
+        'expected share audit log'
+    );
 });
 
 test('migration CLI rolls recent migrations down and back up', function () {
@@ -276,6 +294,14 @@ function render_view_for_token(string $token): string {
     $code = '$_GET["token"] = ' . var_export($token, true) . ';'
         . '$_SERVER["HTTP_HOST"] = "localhost:8000";'
         . 'require ' . var_export(__DIR__ . '/../public/view.php', true) . ';';
+
+    return shell_exec('php -r ' . escapeshellarg($code)) ?: '';
+}
+
+function render_admin_page(): string {
+    $code = '$_SERVER["REQUEST_METHOD"] = "GET";'
+        . '$_SERVER["HTTP_HOST"] = "localhost:8000";'
+        . 'require ' . var_export(__DIR__ . '/../public/admin.php', true) . ';';
 
     return shell_exec('php -r ' . escapeshellarg($code)) ?: '';
 }
