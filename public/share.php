@@ -26,26 +26,15 @@ $created_share_type = null;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email = trim($_POST['email'] ?? '');
-    $shareType = $_POST['share_type'] ?? 'secure';
+    $shareType = $_POST['share_type'] ?? 'labeled';
 
     if ($email === '') {
         $error = 'Recipient email is required.';
-    } elseif (!in_array($shareType, ['secure', 'simple'], true)) {
+    } elseif (!in_array($shareType, ['labeled', 'discreet'], true)) {
         $error = 'Choose a link type.';
     } else {
-        $token = random_token();
-        $stmt = db()->prepare('
-            INSERT INTO shares (document_id, token, recipient_email, share_type)
-            VALUES (?, ?, ?, ?)
-        ');
-        $stmt->execute([$doc['id'], $token, $email, $shareType]);
-        $shareId = (int) db()->lastInsertId();
-        audit_log('create', 'share', $shareId, [
-            'document_id' => $doc['id'],
-            'recipient_email' => $email,
-            'share_type' => $shareType,
-        ]);
-        $created_url = document_share_url($doc, $shareType, $token, request_base_url());
+        $share = create_document_share($doc, $email, $shareType);
+        $created_url = $share['url'];
         $created_share_type = $shareType;
     }
 }
@@ -64,7 +53,7 @@ render_header('Share · ' . $doc['title'], $staff);
 
 <?php if ($created_url): ?>
     <div class="banner banner-success">
-        <?= $created_share_type === 'simple' ? 'Simple link ready:' : 'Secure link ready:' ?>
+        <?= $created_share_type === 'discreet' ? 'Discreet link ready:' : 'Labeled link ready:' ?>
         <code><?= h($created_url) ?></code>
     </div>
 <?php endif ?>
@@ -72,8 +61,8 @@ render_header('Share · ' . $doc['title'], $staff);
 <section class="card">
     <h2 class="card-title">Create share link</h2>
     <p class="card-note">
-        Recommended for sensitive documents: a readable ID plus a private token. Use the simple slug
-        when being easy to say or type matters more than keeping the link hard to guess.
+        Recommended for most documents: a readable label plus a private token. Use a discreet link
+        when the title itself is sensitive.
     </p>
     <form method="post">
         <div class="form-field">
@@ -83,17 +72,17 @@ render_header('Share · ' . $doc['title'], $staff);
         <fieldset class="choice-list">
             <legend>Link type</legend>
             <label class="choice-item">
-                <input type="radio" name="share_type" value="secure" checked>
+                <input type="radio" name="share_type" value="labeled" checked>
                 <span>
-                    <strong>Secure readable link <em>Recommended</em></strong>
-                    <small><?= h($doc['readable_id']) ?> plus a private token. Best for HR, finance, legal, or anything sensitive.</small>
+                    <strong>Labeled link <em>Recommended</em></strong>
+                    <small>/d/<?= h($doc['slug_id']) ?>/token. The token controls access; stale labels still work.</small>
                 </span>
             </label>
             <label class="choice-item">
-                <input type="radio" name="share_type" value="simple">
+                <input type="radio" name="share_type" value="discreet">
                 <span>
-                    <strong>Simple slug link</strong>
-                    <small><?= h($doc['slug_id']) ?> only. Easier to share aloud or paste in notes; anyone with the slug can open it.</small>
+                    <strong>Discreet token link</strong>
+                    <small>/s/token only. Best when the title should not appear in the URL.</small>
                 </span>
             </label>
         </fieldset>
